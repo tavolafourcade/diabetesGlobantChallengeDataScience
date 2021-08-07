@@ -39,12 +39,6 @@ attach(data)
 str(data)
 View(data)
 
-# Transformando variables id a factor####
-#hospData$admission_type_id <- as.factor(hospData$admission_type_id)
-#hospData$discharge_disposition_id <- as.factor(hospData$discharge_disposition_id)
-#hospData$admission_source_id <- as.factor(hospData$admission_source_id)
-
-
 # Presencia de Missing Values ####
 # Se identifica la presencia de Missing values bajo los valores "?" y "Unknown/Invalid"
 table(weight)
@@ -346,7 +340,73 @@ par(mfrow=c(1, 2))
 barplot(table(data3$admission_source_id), main="Antes")
 barplot(table(data4$admission_source_id), main="Después")
 
-#diag_1: 
+#diag_1: The primary diagnosis (coded as first three digits of ICD9); 848 distinct values ####
+# Se identificó una fuente de información que brinda una mayor noción sobre las categorías y un insight sobre la manera en la cual se podrían agrupar
+# Las categorías que se crearían serían:
+  # Circulatory: Diseases of the circulatory system. Códigos: 390-459, 785
+  # Respiratory: Diseases of the respiratory system. Códigos: 460-519, 786
+  # Digestive: Diseases of the digestive system. Códigos: 520-579, 787
+  # Diabetes: Diabetes mellitus. Códigos: 250
+  # Injury: Injury and poisoning. Códigos: 800-999
+  # Musculoskeletal: Diseases of the musculoskeletal system and connective tissue. Códigos: 710-739
+  # Genitourinary: Diseases of the genitourinary system. Códigos: 580-629, 788
+  # Neoplasms: Neoplasms. Códigos: 140-239
+  # Other: around 17% of the rest are considered here.
+
+data5 <- data4
+
+# Se requiere convertir a caracter para abordar los registros que tienen letras
+data5$diag_1 <- as.character(data5$diag_1)
+
+data5<- mutate(data5, diagnostic =
+                 ifelse(str_detect(diag_1, "V") | str_detect(diag_1, "E"),"Other", # Se identificaron que algunos registros empiezan con V y E
+                        ifelse(str_detect(diag_1, "250"), "Diabetes", # Se aprecia que el valor es del tipo 250.xx
+                               ifelse((as.integer(diag_1) >= 390 & as.integer(diag_1) <= 459) | as.integer(diag_1) == 785, "Circulatory",
+                                      ifelse((as.integer(diag_1) >= 460 & as.integer(diag_1) <= 519) | as.integer(diag_1) == 786, "Respiratory", 
+                                             ifelse((as.integer(diag_1) >= 520 & as.integer(diag_1) <= 579) | as.integer(diag_1) == 787, "Digestive", 
+                                                    ifelse((as.integer(diag_1) >= 580 & as.integer(diag_1) <= 629) | as.integer(diag_1) == 788, "Genitourinary",
+                                                           ifelse((as.integer(diag_1) >= 140 & as.integer(diag_1) <= 239), "Neoplasms",  
+                                                                  ifelse((as.integer(diag_1) >= 710 & as.integer(diag_1) <= 739), "Musculoskeletal",          
+                                                                         ifelse((as.integer(diag_1) >= 800 & as.integer(diag_1) <= 999), "Injury",                    
+                                                                                "Other"))))))))))
+
+data5$diag_1 <- as.factor(data5$diag_1)
+
+windows()
+par(mfrow=c(1, 2))
+barplot(table(data4$diag_1), main="Antes")
+barplot(table(data5$diagnostic), main="Después")
+
+data5 <- subset(data5, select = -c(diag_1))
+
+str(data5)
+barplot(table(data$age))
+
+# Age: Grouped in 10-year intervals: [0, 10), [10, 20), . . ., [90, 100) ####
+# Se puede apreciar que los rangos etarios avanzan de 10 en 10. Se podría categorizar las edades de 0 a 10 y 10 a 20 en una categoría al igual que de
+# 80 a 90 y 90 a 100 en otra y el resto de categorías tendrían un rango de 20 años también.
+# Se aprecia también que la distribución tiene una asimetría negativa.
+data5$age <- data4$age
+data5$age <- 
+  ifelse(data5$age == "[0-10)","[0-20)",
+         ifelse(data5$age=="[10-20)","[0-20)",
+                ifelse(data5$age=="[20-30)","[20-40)",
+                       ifelse(data5$age=="[30-40)","[20-40)",
+                              ifelse(data5$age=="[40-50)","[40-60)",
+                                     ifelse(data5$age=="[50-60)","[40-60)",
+                                          ifelse(data5$age=="[60-70)","[60-80)",
+                                                ifelse(data5$age=="[70-80)","[60-80)",
+                                                      ifelse(data5$age=="[80-90)","[80-100)",
+                                                            ifelse(data5$age=="[90-100)","[80-100)",
+                                                                data5$age))))))))))
+
+data5$age <- as.factor(data5$age)
+windows()
+par(mfrow=c(1, 2))
+barplot(table(data4$age), main="Antes")
+barplot(table(data5$age), main="Después")
+
+barplot(table(data5$age))
 ######################################################
 
 # Hacemos una 
