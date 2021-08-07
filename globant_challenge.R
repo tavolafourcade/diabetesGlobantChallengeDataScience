@@ -406,7 +406,75 @@ par(mfrow=c(1, 2))
 barplot(table(data4$age), main="Antes")
 barplot(table(data5$age), main="Después")
 
-barplot(table(data5$age))
+# Variables adicionales que requerirían ser retiradas del análisis ####
+# Se aprecia cierta duplicidad en cuanto a la medicación prescrita. 
+# Por ejemplo, se tiene las variables glyburide y metformin por separado pero a la vez se tiene la variable glyburide.metformin que hace referencia
+# a la prescripción de ambos fármacos en simultáneo.
+
+# En consecuencia, se tomó la decisión de eliminar del análisis a glyburide.metformin, glipizide.metformin, glimepiride.pioglitazone,
+# metformin.rosiglitazone y metformin.pioglitazone
+
+data5 <- subset(data5, select = -c(glyburide.metformin, 
+                                   glipizide.metformin, 
+                                   glimepiride.pioglitazone, 
+                                   metformin.rosiglitazone, 
+                                   metformin.pioglitazone))
+
+# Registros duplicados que deben ser removidos ####
+# Se aprecia la presencia de duplicidad en los registros para un mismo patient_nbr en un porcentaje aproximado de 30%.
+# Para poder remover los registros duplicados se utiliza !duplicated().
+data5 <- data5[!duplicated(data5$patient_nbr),]
+
+# Variable TARGET readmitted: 30 days, ">30" if the patient was readmitted in more than 30 days, and "No" for no record of readmission.####
+# El análisis se centra en la readmisión anticipada (<30 días), se puede categorizar en:
+  # 1: readmitido dentro de los 30 días posiblemente porque el tratamiento no fue el apropiado.
+  # 0: cualquier otro caso
+data5$readmitted <- data4$readmitted
+data5$readmitted <- case_when(data5$readmitted %in% c(">30","NO") ~ "0",
+                              TRUE ~ "1")
+data5$readmitted <- as.factor(data5$readmitted)         
+
+
+# Tratamiento de las variables numéricas (Outlier, Correlación, etc) ####
+# Revisión general ####
+windows()
+par(mfrow = c(4,2))
+boxplot(data5$time_in_hospital, main = "time_in_hospital")
+boxplot(data5$num_lab_procedures, main = "num_lab_procedures")
+boxplot(data5$num_procedures, main = "num_procedures")
+boxplot(data5$num_medications, main = "num_medications")
+boxplot(data5$number_outpatient, main = "number_outpatient")
+boxplot(data5$number_emergency, main = "number_emergency")
+boxplot(data5$number_inpatient, main = "number_inpatient")
+boxplot(data5$number_diagnoses, main = "number_diagnoses")
+
+# Se aprecia presencia de outliers en todas las variables numéricas analizadas
+# Aplicando Capping ####
+# time_in_hospital ####
+data6 <- data5
+x <- data6$time_in_hospital
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$time_in_hospital <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$time_in_hospital, main="Antes")
+boxplot(data6$time_in_hospital, main="Despues")
+mtext("Time in Hospital", outer = TRUE, side = 3, line = -1)
+
+
+str(data5)
+barplot(table(data5$readmitted))
 ######################################################
 
 # Hacemos una 
