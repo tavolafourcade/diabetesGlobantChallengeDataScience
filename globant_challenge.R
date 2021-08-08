@@ -696,34 +696,230 @@ dataset <-subset(data7, select = -c(acarbose,
                                     repaglinide,
                                     troglitazone))
 
-# Implementación de los modelos ####
+# IMPLEMENTACIÓN DE LOS MODELOS ####
+
 # Se decidió implementar 3 modelos: Modelo logístico, Decision Tree y Random Forest
-# Se hará un rebalanceo de los datos usando técnica de undersampling de la clase predominante
+# Se hará un rebalanceo de los datos
 # Se implementará Cross Validation
 # El data set de entrenamiento tendrá el 70% de los datos
 # El data set de  testing tendrá el 30% de los datos
 
+# Seleccion de datos de entrenamiento y de testing ####
+dataset$diagnostic <- as.factor(dataset$diagnostic)
+train <- createDataPartition(dataset$readmitted, p = 0.7, list = FALSE)
+data_train <- dataset[train, ]
+data_test <- dataset[-train, ]
+str(data_train)
+# Balanceo de datos ####
+# Se utiliza Random Oversampling Samples para generar datos de forma sintética
+data_rose <- ROSE(readmitted ~., data = data_train)$data
+table(data_rose$readmitted)
+str(data_rose)
+# Aplicando la técnica de Cross Validation ####
+train_control  <- trainControl(method = "CV",number = 5)
 
+# Implementando el modelo logistico ####
+#Modelo_logit <- train(readmitted ~ race + gender + age + admission_type_id + discharge_disposition_id + 
+#                       admission_source_id + max_glu_serum + A1Cresult + metformin + insulin + change +
+#                       diabetesMed + diagnostic + time_in_hospital + num_lab_procedures + num_procedures + 
+#                        num_medications + number_diagnoses, 
+#                     data = data_rose, trControl = train_control, method = "glm", family = "binomial")
+
+#model <- glm(formula,trControl = train_control, method = "glm", family=binomial(link='logit'),data=data_rose)
+model <- glm(readmitted ~.,family=binomial(link='logit'),data=data_rose)
+#table(logit_pred, data_test$readmitted)
+#levels(data_train$readmitted)
+#View(model)
+#summary(model)
+str(dataset)
+logit_pred <- predict(model, newdata = data_test, interval = "confidence")
+
+# Indicadores ####
+## Calculando el AUC ####
+AUC1 <- MLmetrics::AUC(logit_pred,data_test$readmitted)
+
+## calcular el GINI ####
+gini1 <- 2*(AUC1) -1
+
+## calcular el LOGLOSS ####
+LogLoss1 <- MLmetrics::LogLoss(logit_pred,as.numeric(as.character(data_test$readmitted)))
+
+## Calcular el KS ####
+KS1 <- MLmetrics::KS_Stat(logit_pred,data_test$readmitted)
+
+
+# Calcular los valores predichos
+
+table(data_test$readmitted)
+
+PRED <- ifelse(logit_pred<=0.5,0,1) # pto de corte 0.5
+PRED <- as.factor(PRED)
+
+
+### Calcular la matriz de confusion ####
+tabla <- caret::confusionMatrix(PRED,data_test$readmitted,positive = "1")
+tabla
+
+#### Sensibilidad ####
+Sensitivity1 <- MLmetrics::Sensitivity(PRED,data_test$readmitted)
+
+#### Specificity ####
+Specificity1 <- MLmetrics::Specificity(PRED,data_test$readmitted)
+
+#### Precision ####
+Accuracy1 <- MLmetrics::Accuracy(PRED,data_test$readmitted)
+
+#### Calcular el error de mala clasificación ####
+error1 <- 1-Accuracy1
+
+# indicadores
+AUC1
+gini1
+LogLoss1
+KS1
+Accuracy1
+error1
+Sensitivity1
+Specificity1
+
+
+
+# Implementando el modelo Decision Tree ####
+DTModel <- train(readmitted ~ race + gender + age + admission_type_id + discharge_disposition_id + 
+                    admission_source_id + max_glu_serum + A1Cresult + metformin + insulin + change +
+                    diabetesMed + diagnostic + time_in_hospital + num_lab_procedures + num_procedures + 
+                    num_medications + number_diagnoses, 
+                    data = data_rose, method = "rpart")
+
+DT_pred <- predict(DTModel, newdata = data_test, interval = "confidence")
+
+# Indicadores ####
+## Calculando el AUC ####
+AUC2 <- MLmetrics::AUC(DT_pred,data_test$readmitted)
+
+## calcular el GINI ####
+gini2 <- 2*(AUC2) -1
+
+## calcular el LOGLOSS ####
+LogLoss2 <- MLmetrics::LogLoss(DT_pred,as.numeric(as.character(data_test$readmitted)))
+
+## Calcular el KS ####
+KS2 <- MLmetrics::KS_Stat(DT_pred,data_test$readmitted)
+
+
+# Calcular los valores predichos
+
+table(data_test$readmitted)
+
+PRED <- ifelse(DT_pred<=0.5,0,1) # pto de corte 0.5
+PRED <- as.factor(PRED)
+
+
+### Calcular la matriz de confusion ####
+tabla2 <- caret::confusionMatrix(PRED,data_test$readmitted,positive = "1")
+tabla2
+
+#### Sensibilidad ####
+Sensitivity2 <- MLmetrics::Sensitivity(PRED,data_test$readmitted)
+
+#### Specificity ####
+Specificity2 <- MLmetrics::Specificity(PRED,data_test$readmitted)
+
+#### Precision ####
+Accuracy2 <- MLmetrics::Accuracy(PRED,data_test$readmitted)
+
+#### Calcular el error de mala clasificación ####
+error2 <- 1-Accuracy2
+
+# indicadores
+AUC2
+gini2
+LogLoss2
+KS2
+Accuracy2
+error2
+Sensitivity2
+Specificity2
+
+
+# Implementando el modelo Random Forest ####
+# OJO: Se tuvo que detener el entrenamiento después de alrededor de 4 horas debido a que no terminaba
+
+#RFModel <- train(readmitted ~ race + gender + age + admission_type_id + discharge_disposition_id + 
+#                   admission_source_id + max_glu_serum + A1Cresult + metformin + insulin + change +
+#                   diabetesMed + diagnostic + time_in_hospital + num_lab_procedures + num_procedures + 
+#                   num_medications + number_diagnoses, 
+#                 data = data_rose, method = "rf")
+
+#RF_pred <- predict(RFModel, newdata = data_test, interval = "confidence")
+
+# Indicadores ####
+## Calculando el AUC ####
+#AUC3 <- MLmetrics::AUC(RF_pred,data_test$readmitted)
+
+## calcular el GINI ####
+#gini3 <- 2*(AUC2) -1
+
+## calcular el LOGLOSS ####
+#LogLoss3 <- MLmetrics::LogLoss(DT_pred,as.numeric(as.character(data_test$readmitted)))
+
+## Calcular el KS ####
+#KS3 <- MLmetrics::KS_Stat(DT_pred,data_test$readmitted)
+
+
+# Calcular los valores predichos
+
+#table(data_test$readmitted)
+
+#PRED <- ifelse(RF_pred<=0.5,0,1) # pto de corte 0.5
+#PRED <- as.factor(PRED)
+
+
+### Calcular la matriz de confusion ####
+#tabla3 <- caret::confusionMatrix(PRED,data_test$readmitted,positive = "1")
+#tabla3
+
+#### Sensibilidad ####
+#Sensitivity3 <- MLmetrics::Sensitivity(PRED,data_test$readmitted)
+
+#### Specificity ####
+#Specificity3 <- MLmetrics::Specificity(PRED,data_test$readmitted)
+
+#### Precision ####
+#Accuracy3 <- MLmetrics::Accuracy(PRED,data_test$readmitted)
+
+#### Calcular el error de mala clasificación ####
+#error3 <- 1-Accuracy3
+
+# indicadores
+#AUC3
+#gini3
+#LogLoss3
+#KS3
+#Accuracy3
+#error3
+#Sensitivity3
+#Specificity3
+
+
+AUC <- rbind(AUC1,AUC2); AUC <- round(AUC,3)
+#Gini <- rbind(gini1,gini2); Gini <- round(Gini,3)
+#LogLoss <- rbind(LogLoss1,LogLoss2); LogLoss <- round(LogLoss,4)
+#KS <- rbind(KS1,KS2); KS <- round(KS,4)
+Accuracy <- rbind(Accuracy1,Accuracy2); Accuracy <- round(Accuracy,3)
+Sensitivity <- rbind(Sensitivity1,Sensitivity2); Sensitivity <- round(Sensitivity,3)
+#Specificity <- rbind(Specificity1,Specificity2); Specificity <- round(Specificity,3)
+
+Indicadores <- cbind(AUC,Accuracy,Sensitivity)
+rownames(Indicadores)<- c('modelo_logit','modelo_DecisionTree')
+colnames(Indicadores)<- c('AUC','Accuracy','Sensitivity')
+
+Indicadores
+
+# Conclusiones ####
+# En base al análisis realizado con un modelo logistico y el modelo decision tree, se concluye que el modelo logistico 
+# es el mejor modelo para predecir la variable readmission.
 
 ######################################################
 
-# Hacemos una 
-data4 <- data3
-data4$metformin.pioglitazone <- as.numeric(data3$metformin.pioglitazone)
-table(data4$metformin.pioglitazone)
-table(data4$glyburide)
-data4$glyburide <- as.numeric(data3$glyburide)
-cor(data4$metformin.pioglitazone,data4$glyburide)
 
-corre <- cor(data4,method = c("spearman"))
-data4[,1:ncol(data4)] <- lapply(data4[,1:ncol(data4)],as.character)
-data4[,1:ncol(data4)] <- lapply(data4[,1:ncol(data4)],as.numeric)
-
-corre <- correlacionS(corre)
-corre$filtro <- ifelse(abs(corre$cor)>0.6,1,0)
-View(corre)
-
-data4$race <- as.numeric(as.factor(data4$race))
-str(data7)
-
-table(diag_1)
