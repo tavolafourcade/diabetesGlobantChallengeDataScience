@@ -29,6 +29,7 @@ library(grid)
 library(data.table)
 library(VIM)
 library(DMwR)
+library(Boruta)
 library(corrplot)
 
 
@@ -473,8 +474,237 @@ boxplot(data6$time_in_hospital, main="Despues")
 mtext("Time in Hospital", outer = TRUE, side = 3, line = -1)
 
 
+# num_lab_procedures ####
+
+x <- data6$num_lab_procedures
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$num_lab_procedures <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$num_lab_procedures, main="Antes")
+boxplot(data6$num_lab_procedures, main="Despues")
+mtext("Number of laboratory procedures", outer = TRUE, side = 3, line = -1)
+
+
+# num_procedures ####
+data6$num_procedures <- data5$num_procedures
+x <- data6$num_procedures
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$num_procedures <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$num_procedures, main="Antes")
+boxplot(data6$num_procedures, main="Despues")
+mtext("Number of procedures", outer = TRUE, side = 3, line = -1)
+
+# num_medications ####
+x <- data6$num_medications
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$num_medications <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$num_medications, main="Antes")
+boxplot(data6$num_medications, main="Despues")
+mtext("Number of medication", outer = TRUE, side = 3, line = -1)
+
+
+# number_outpatient ####
+x <- data6$number_outpatient
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_outpatient <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$number_outpatient, main="Antes")
+boxplot(data6$number_outpatient, main="Despues")
+mtext("Number of outpatients", outer = TRUE, side = 3, line = -1)
+
+# En el caso de Number of outpatients vemos que no hay mucho aporte de valor debido a la cantidad de
+# outliers que permanecen después de aplicar capping. Se procede a optar por la eliminación de estos
+data6 <- subset(data6, select = -c(number_outpatient))
+
+# number_emergency ####
+x <- data6$number_emergency
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_emergency <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$number_emergency, main="Antes")
+boxplot(data6$number_emergency, main="Despues")
+mtext("Number of emergency", outer = TRUE, side = 3, line = -1)
+
+# Al igual que en el caso de Number of outpatients, en Number of Emergency vemos que no hay mucho 
+# aporte de valor debido a la cantidad de outliers que permanecen después de aplicar capping. 
+# Se procede a optar por la eliminación de esta variable
+data6 <- subset(data6, select = -c(number_emergency))
+
+
+# number_inpatient ####
+x <- data6$number_inpatient
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_inpatient <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$number_inpatient, main="Antes")
+boxplot(data6$number_inpatient, main="Despues")
+mtext("Number of inpatient", outer = TRUE, side = 3, line = -1)
+
+# Al igual que en los dos casos previos, en Number of Inpatient vemos que no hay mucho 
+# aporte de valor debido a la cantidad de outliers que permanecen después de aplicar capping. 
+# Se procede a optar por la eliminación de esta variable
+data6 <- subset(data6, select = -c(number_inpatient))
+
+# number_diagnoses ####
+x <- data6$number_diagnoses
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_diagnoses <- x
+
+# Observando los outliers identificados
+outliers1 <- boxplot(x)$out
+outliers1 ; length(outliers1)
+
+
+# Observando el antes y el después
+windows()
+par(mfrow=c(1, 2))
+boxplot(data5$number_diagnoses, main="Antes")
+boxplot(data6$number_diagnoses, main="Despues")
+mtext("Number of diagnoses", outer = TRUE, side = 3, line = -1)
+
+
+
 str(data5)
 barplot(table(data5$readmitted))
+# Análisis de correlación entre variables numéricas ####
+str(data6)
+cuantis <- data6 %>% select(time_in_hospital,
+                            num_lab_procedures,
+                            num_procedures,
+                            num_medications,
+                            number_diagnoses)
+
+cualis <- data6%>% select(-patient_nbr,
+                          -time_in_hospital,
+                          -num_lab_procedures,
+                          -num_procedures,
+                          -num_medications,
+                          -number_diagnoses)
+
+res <- cor(cuantis)
+round(res, 2)
+data7 <- cbind(cualis,cuantis)
+# Si bien se aprecia cierta correlación entre time_in_hospital y num_medications, esta no llega a superar
+# el 0.6 por lo que se determina que no hay suficiente correlación entre las variables.
+
+# Selección de variables utilizando Boruta ####
+# (se basa en random forest, escoge variables con target dicotómica)
+boruta <- Boruta(readmitted ~., data = data7, doTrace = 0)
+windows()
+plot(boruta, las = 2, cex.axis = 1)
+
+attStats(boruta)
+boruta
+
+#Después de utilizar Boruta para la selección de variables se obtiene lo siguiente:
+#18 attributes confirmed important: A1Cresult, admission_source_id, admission_type_id, age,
+#change and 13 more;
+#14 attributes confirmed unimportant: acarbose, acetohexamide, chlorpropamide, glimepiride,
+#glipizide and 9 more;
+
+# De este modo, se procederá a retirar las variables que fueron consideradas irrelevantes del dataset final
+dataset <-subset(data7, select = -c(acarbose, 
+                                    acetohexamide, 
+                                    chlorpropamide, 
+                                    glimepiride, 
+                                    glipizide,
+                                    nateglinide,
+                                    glyburide,
+                                    tolbutamide,
+                                    miglitol,
+                                    rosiglitazone,
+                                    pioglitazone,
+                                    tolazamide,
+                                    repaglinide,
+                                    troglitazone))
+
+# Implementación de los modelos ####
+# Se decidió implementar 3 modelos: Modelo logístico, Decision Tree y Random Forest
+# Se hará un rebalanceo de los datos usando técnica de undersampling de la clase predominante
+# Se implementará Cross Validation
+# El data set de entrenamiento tendrá el 70% de los datos
+# El data set de  testing tendrá el 30% de los datos
+
+
+
 ######################################################
 
 # Hacemos una 
@@ -494,6 +724,6 @@ corre$filtro <- ifelse(abs(corre$cor)>0.6,1,0)
 View(corre)
 
 data4$race <- as.numeric(as.factor(data4$race))
-str(data3)
+str(data7)
 
 table(diag_1)
