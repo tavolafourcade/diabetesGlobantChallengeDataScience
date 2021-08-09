@@ -1,0 +1,1009 @@
+---
+title: "globant_challenge"
+author: "Octavio Lafourcade"
+date: "8 de agosto de 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Diabetes Data Set
+
+Esta base de datos corresponde a la información médica de pacientes relacionada a la diabetes. 
+El análisis se centra en la readmisión anticipada (<30 días), se puede categorizar en:
+<br/>
+<br/>1: readmitido dentro de los 30 días posiblemente porque el tratamiento no fue el apropiado.<br/>
+0: cualquier otro caso
+
+## Librerías a utilizar
+
+```{r message=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(lattice)
+library(caret)
+library(stringr)
+library(dplyr)
+library(psych)
+library(ROSE)
+library(colorspace)
+library(grid)
+library(data.table)
+library(VIM)
+library(DMwR)
+library(Boruta)
+library(corrplot)
+```
+
+
+
+## Estableciendo el directorio de trabajo y leyendo los datos
+```{r}
+# Semilla para replicar el codigo
+set.seed(1)
+
+# Cambiar el directorio de trabajo
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+# Leyendo el data set
+data <- read.csv("./diabetic_data.csv")
+attach(data)
+```
+
+
+
+## Presencia de Missing values
+
+Se identifica la presencia de Missing values bajo los valores "?" y "Unknown/Invalid"
+```{r}
+table(weight)
+table(payer_code)
+table(diag_1)
+table(diag_2)
+table(diag_3)
+table(race)
+table(gender)
+table(medical_specialty)
+
+data2 <- data
+```
+
+
+### Pasos a seguir
+1. Recodificación de Datos Perdidos 
+2. Diagnóstico de Datos Perdidos, MCAR o MAR?
+3. Imputación de Datos Perdidos
+
+
+### 1. Recodificación de Datos Perdidos
+
+```{r}
+data2$weight <- replace(data2$weight, data2$weight=="?", NA)
+data2$payer_code <- replace(data2$payer_code, data2$payer_code=="?", NA)
+data2$diag_1 <- replace(data2$diag_1, data2$diag_1=="?", NA)
+data2$diag_2 <- replace(data2$diag_2, data2$diag_2=="?", NA)
+data2$diag_3 <- replace(data2$diag_3, data2$diag_3=="?", NA)
+data2$race <- replace(data2$race, data2$race=="?", NA)
+data2$gender <- replace(data2$gender, data2$gender=="Unknown/Invalid", NA)
+data2$medical_specialty <- replace(data2$medical_specialty, data2$medical_specialty=="?", NA)
+```
+
+
+Para ver que columnas tienen valores perdidos
+```{r}
+which(colSums(is.na(data2))!=0)
+```
+
+
+Para ver el porcentaje de valores perdidos en las columnas
+```{r}
+colmiss=c(3,4,6,11,12,19,20,21)
+per.miss.col=100*colSums(is.na(data2[,colmiss]))/dim(data2)[1]
+per.miss.col
+```
+
+### 2. Diagnóstico de datos perdidos
+A simple vista se puede apreciar que las variables weight, payer_code y medical_specialty tienen una considerable presencia de valores faltantes. Dado el alto porcentaje, no justificaría realizar ninguna técnica de imputación si no mas bien, retirar estas variables del análisis. En cambio, las variables race, gender, diag_1, diag_2 y diag_3 tienen una presencia de valores faltantes inferior al 5% por lo que se podría aplicar una técnica de imputación.
+
+En este sentido, la presencia de datos perdidos se puede deber a que el instrumento de recolección no funcionaba bien y no registró cierta información. 
+Otras alternativas es que el analista haya provocado los datos perdidos, no tenga información o es inconsistente y lo eliminó. También puede ser porque los datos no se ingresaron, el historial no se registró adecuadamente y se perdió esa información. 
+En algunos casos va a ser necesario estimar esos valores (como en el caso de race, gender, diag_1, diag_2 y diag_3) y en otros va a ser mejor no estimarlos y dejarlos allí.
+
+Identificando el mecanismo generador de valores perdidos<br>
+- MCAR: valores faltantes completamente al azar<br>
+- MAR: valores faltantes al azar como consecuencia de otros atributos<br>
+- NMAR: valores faltantes no al azar
+
+
+
+Usando la librería VIM
+```{r message=FALSE}
+#summary(a)
+aggr(data2,numbers=T, sortComb=TRUE, sortVar=TRUE, only.miss=TRUE)
+#windows()
+#matrixplot(data2)
+```
+
+
+
+¿MCAR, MAR o NMAR?
+```{r}
+#VIM::pbox(data2[6,11], pos=1)
+#t.test(data2$weight ~ is.na(data2$payer_code), data=data2)
+#marginplot(data2[,c("Weight", "Payer Code")])
+```
+
+Del marginplot se puede apreciar que weight, payer_code y medical_specialty siguen un mecanismo generador de valores perdidos NMAR.
+
+### 3.Imputación de datos perdidos 
+A partir del diagnóstico previo se decidió retirar weight, payer_code y medical_specialty e imputar race, gender, diag_1, diag_2 y diag_3.
+Dado que el porcentaje de valores perdidos en estas 4 variables es inferior al 5% podemos imputar por la media, la moda o la mediana (Si la variable es numérica contínua con la media, numérica discreta con la mediana, categórica con la moda).
+
+
+Retirando weight, payer_code y medical_specialty
+```{r}
+data3 <- data2[,-c(6,11,12)]
+```
+
+
+Imputando
+```{r}
+data3<-centralImputation(data3)
+data3<-initialise(data3,method="median")
+```
+
+
+Validando
+```{r}
+which(colSums(is.na(data3))!=0)
+```
+
+
+### Selección de variables dentro del contexto del negocio 
+
+1. Se ha identificado que un paciente (patient_nbr) puede tener más de un encuentro (encounter_id) y la unidad de análisis es el paciente. De este modo, se tomó la decisión de retirar la variable encounter_id
+
+2. Se aprecia que las variables examide y citoglipton tienen solo un nivel "No" por lo que se retiran del análisis
+
+3. Se decide trabajar con el diagnóstico principal por lo que los diagnósticos secundarios 2 y 3 son retirados
+
+```{r}
+data3 <- data3[,-c(1,17,18,37,38)]
+```
+
+
+
+## Feature Engineering
+En esta etapa se va a realizar la recodificación de variables
+
+### admission_type_id: Integer identifier corresponding to 9 distinct values:
+  1:emergency, 2:urgent, 3:elective, 4:newborn, 5:not available, 6:NULL, 7: Trauma Center, 8: Not Mapped
+  Al analizar estas categorías se podría concluir que hay agrupaciones que se pueden realizar:<br>
+    1: emergency, urgent, Trauma Center<br>
+    3: elective<br>
+    4: newborn<br>
+    5: not available, NULL, Not Mapped<br>
+
+```{r echo=FALSE}
+barplot(table(data3$admission_type_id), main ="Admission_type" )
+data4 <- data3
+```
+
+  De este modo, procedemos a recategorizar:
+```{r}
+data4$admission_type_id <- 
+  ifelse(data3$admission_type_id == 1,1,
+         ifelse(data3$admission_type_id==2,1,
+                ifelse(data3$admission_type_id==7,1,
+                       ifelse(data3$admission_type_id==6,5,
+                              ifelse(data3$admission_type_id==8,5,
+                                     data3$admission_type_id)))))
+```
+
+
+  Cambiamos el nombre a las categorías y convertimos en factor
+```{r}
+data4$admission_type_id <- str_replace(data4$admission_type_id,"1","Emergency")
+data4$admission_type_id <- str_replace(data4$admission_type_id,"5","Other")
+data4$admission_type_id <- str_replace(data4$admission_type_id,"3","Elective")
+data4$admission_type_id <- str_replace(data4$admission_type_id,"4","Newborn")
+
+data4$admission_type_id <- as.factor(data4$admission_type_id)
+```
+
+```{r echo=FALSE}
+par(mfrow=c(1, 2))
+barplot(table(data3$admission_type_id), main="Antes")
+barplot(table(data4$admission_type_id), main="Después")
+```
+
+
+
+
+### discharge_disposition_id: Integer identifier corresponding to 29 distinct values, for example, discharged to home, expired, and not available
+
+Categorizar en este caso se vuelve más complejo pero necesario por la atomización de categorías. 
+Esta variable tiene las siguientes categorías:<br>
+  1: Discharged to home, <br>
+  2: Discharged/transferred to another short term hospital, <br>
+  3: Discharged/transferred to SNF, 4: Discharged/transferred to ICF,<br>
+  5: Discharged/transferred to another type of inpatient care institution,<br>
+  6: Discharged/transferred to home with home health service<br>
+  7: Left AMA<br>
+  8: Discharged/transferred to home under care of Home IV provider<br>
+  9: Admitted as an inpatient to this hospital<br>
+  10: Neonate discharged to another hospital for neonatal aftercare<br>
+  11: Expired*<br>
+  12: Still patient or expected to return for outpatient services<br>
+  13: Hospice / home*<br>
+  14: Hospice / medical facility*<br>
+  15: Discharged/transferred within this institution to Medicare approved swing bed<br>
+  16: Discharged/transferred/referred another institution for outpatient services<br>
+  17: Discharged/transferred/referred to this institution for outpatient services<br>
+  18: NULL<br>
+  19: Expired at home. Medicaid only, hospice.*<br>
+  20: Expired in a medical facility. Medicaid only, hospice.*<br>
+  21: Expired, place unknown. Medicaid only, hospice.*<br>
+  22: Discharged/transferred to another rehab fac including rehab units of a hospital<br>
+  23: Discharged/transferred to a long term care hospital.<br>
+  24: Discharged/transferred to a nursing facility certified under Medicaid but not certified under Medica...<br>
+  25: Not Mapped<br>
+  26: Unknown/Invalid <- Fue imputada<br>
+  27: Discharged/transferred to a federal health care facility.<br>
+  28: Discharged/transferred/referred to a psychiatric hospital of psychiatric distinct part unit of a hos...<br>
+  29: Discharged/transferred to a Critical Access Hospital (CAH).<br>
+  30: Discharged/transferred to another Type of Health Care Institution not Defined Elsewhere<br>
+
+```{r echo=FALSE}
+barplot(table(data3$discharge_disposition_id), main="discharge_disposition")
+```
+
+Hay tres aspectos a considerar: 
+    Por un lado, no se puede perder de vista que el objetivo es predecir si un paciente es readmitido. En este sentido, hay categorías que se relacionan con la muerte o que un paciente ha sido deshauciado y enviado a un asilo o a su casa. Tales categorías son la 11, 13, 14, 19, 20, or 21. Lo adecuado sería retirar los registros de estos pacientes del data set.
+
+```{r}
+data4 <- data4[ !(data4$discharge_disposition_id %in% c(11, 13, 14, 19, 20, 21)), ]
+
+```
+
+Se tiene la presencia de categorías con NULL y Not Mapped (18, 25) por lo que se procede a imputar
+
+```{r}
+data4$discharge_disposition_id <- replace(data4$discharge_disposition_id, data4$discharge_disposition_id==18, NA)
+data4$discharge_disposition_id <- replace(data4$discharge_disposition_id, data4$discharge_disposition_id==25, NA)
+colmiss=c(6,7)
+per.miss.col=100*colSums(is.na(data4[,colmiss]))/dim(data4)[1]
+per.miss.col
+```
+
+
+Se aprecia que las categorías 18 y 25 corresponden al 4.71% del total de registros por lo que aún se puede utilizar una técnica de imputación.
+```{r}
+data4<-centralImputation(data4)
+data4<-initialise(data4,method="median")
+```
+
+
+Por otro lado, se aprecia una disparidad considerable entre la categoría 1 respecto al resto de categorías. Además, el resto de variables dan a entender que el paciente fue derivado a otro hospital o entidad. De este modo, se podría generar una categoría que haga referencia a Discharged/transferred ... y agrupar al resto de categorías en ella.
+    
+```{r}
+data4$discharge_disposition_id <- 
+  ifelse(data4$discharge_disposition_id == 3,2,
+  ifelse(data4$discharge_disposition_id==4,2,
+  ifelse(data4$discharge_disposition_id==5,2,
+  ifelse(data4$discharge_disposition_id==6,2,
+  ifelse(data4$discharge_disposition_id==7,2,
+  ifelse(data4$discharge_disposition_id==8,2,
+  ifelse(data4$discharge_disposition_id==9,2,
+  ifelse(data4$discharge_disposition_id==10,2,
+  ifelse(data4$discharge_disposition_id==12,2,
+  ifelse(data4$discharge_disposition_id==15,2,
+  ifelse(data4$discharge_disposition_id==16,2,
+  ifelse(data4$discharge_disposition_id==17,2,
+  ifelse(data4$discharge_disposition_id==22,2,
+  ifelse(data4$discharge_disposition_id==23,2,
+  ifelse(data4$discharge_disposition_id==24,2,
+  ifelse(data4$discharge_disposition_id==27,2,                                                                                                           ifelse(data4$discharge_disposition_id==28,2,                                                                                                           data4$discharge_disposition_id)))))))))))))))))
+```
+
+
+
+Finalmente, podemos apreciar la diferencia en la categorización
+```{r echo=FALSE}
+
+par(mfrow=c(1, 2))
+barplot(table(data3$discharge_disposition_id), main="Antes")
+barplot(table(data4$discharge_disposition_id), main="Después")
+```
+
+Renombramos las variables
+```{r}
+data4$discharge_disposition_id <- case_when(data4$discharge_disposition_id %in% "1" ~ "Home",TRUE ~ "Other")
+
+```
+  
+Convirtiendo a factor
+```{r}
+data4$discharge_disposition_id <- as.factor(data4$discharge_disposition_id)
+
+```
+
+
+
+
+###admission_source_id: Integer identifier corresponding to 21 distinct values, for example, physician referral, emergency room, and transfer from a hospital
+Esta variable tiene las siguientes categorías:<br>
+  1: Physician Referral<br>
+  2: Clinic Referral<br>
+  3: HMO Referral<br>
+  4: Transfer from a hospital<br>
+  5: Transfer from a Skilled Nursing Facility (SNF)<br>
+  6: Transfer from another health care facility<br>
+  7: Emergency Room<br>
+  8: Court/Law Enforcement<br>
+  9: Not Available<br>
+  10: Transfer from critial access hospital<br>
+  11: Normal Delivery<br>
+  12: Premature Delivery-<br>
+  13: Sick Baby-<br>
+  14: Extramural Birth<br>
+  15: Not Available-<br>
+  17: NULL<br>
+  18: Transfer From Another Home Health Agency-<br>
+  19: Readmission to Same Home Health Agency-<br>
+  20: Not Mapped<br>
+  21: Unknown/Invalid-<br>
+  22: Transfer from hospital inpt/same fac reslt in a sep claim<br>
+  23: Born inside this hospital-<br>
+  24: Born outside this hospital-<br>
+  25: Transfer from Ambulatory Surgery Center<br>
+  26: Transfer from Hospice-<br>
+
+
+
+
+Se puede apreciar que las categorías 1 y 7 concentran la mayor parte de los registros.
+Las categorías 1,2 y 3 se tratan de referidos por lo que se podrían categorizarse en una categoría.
+Las categorías 4,5,6,10,22,25  se tratan de transferencias desde otra entidad y podrían categorizarse en una categoría.
+La categoría 7 estaría individualizada.
+El resto de categorías podrían agruparse bajo "Otros"
+
+```{r echo=FALSE}
+data4$admission_source_id <- 
+  ifelse(data4$admission_source_id == 1,1,
+  ifelse(data4$admission_source_id==2,1,
+  ifelse(data4$admission_source_id==3,1,
+  ifelse(data4$admission_source_id==4,4,
+  ifelse(data4$admission_source_id==5,4,
+  ifelse(data4$admission_source_id==6,4,
+  ifelse(data4$admission_source_id==10,4,
+  ifelse(data4$admission_source_id==22,4,
+  ifelse(data4$admission_source_id==25,4,
+  ifelse(data4$admission_source_id==7,7,
+  ifelse(data4$admission_source_id==8,8,
+  ifelse(data4$admission_source_id==9,8,
+  ifelse(data4$admission_source_id==11,8,
+  ifelse(data4$admission_source_id==13,8,
+  ifelse(data4$admission_source_id==14,8,
+  ifelse(data4$admission_source_id==17,8,
+  ifelse(data4$admission_source_id==20,8,                                                                                                                data4$admission_source_id)))))))))))))))))
+
+data4$admission_source_id <- case_when(data4$admission_source_id %in% c("1") ~ "Referral",
+                                       data4$admission_source_id %in% c("4") ~   "Transfers", 
+                                       data4$admission_source_id %in% c("8") ~   "Other", 
+                                    TRUE ~ "Emergency Room")                                          
+
+data4$admission_source_id <- as.factor(data4$admission_source_id)
+
+par(mfrow=c(1, 2))
+barplot(table(data3$admission_source_id), main="Antes")
+barplot(table(data4$admission_source_id), main="Después")
+
+```
+
+
+
+###diag_1: The primary diagnosis (coded as first three digits of ICD9); 848 distinct values
+Se identificó una fuente de información que brinda una mayor noción sobre las categorías y un insight sobre la manera en la cual se podrían agrupar
+Las categorías que se crearían serían:<br>
+  Circulatory: Diseases of the circulatory system. Códigos: 390–459, 785<br>
+  Respiratory: Diseases of the respiratory system. Códigos: 460–519, 786<br>
+  Digestive: Diseases of the digestive system. Códigos: 520–579, 787<br>
+  Diabetes: Diabetes mellitus. Códigos: 250<br>
+  Injury: Injury and poisoning. Códigos: 800–999<br>
+  Musculoskeletal: Diseases of the musculoskeletal system and connective tissue. Códigos: 710–739<br>
+  Genitourinary: Diseases of the genitourinary system. Códigos: 580–629, 788<br>
+  Neoplasms: Neoplasms. Códigos: 140–239<br>
+  Other: around 17% of the rest are considered here.<br>
+
+```{r}
+data5 <- data4
+```
+
+
+Se requiere convertir a caracter para abordar los registros que tienen letras
+```{r echo=FALSE, message=FALSE}
+data5$diag_1 <- as.character(data5$diag_1)
+
+data5<- mutate(data5, diagnostic =
+ ifelse(str_detect(diag_1, "V") | str_detect(diag_1, "E"),"Other", # Se identificaron que algunos registros empiezan con V y E
+ ifelse(str_detect(diag_1, "250"), "Diabetes", # Se aprecia que el valor es del tipo 250.xx
+ ifelse((as.integer(diag_1) >= 390 & as.integer(diag_1) <= 459) | as.integer(diag_1) == 785, "Circulatory",
+ ifelse((as.integer(diag_1) >= 460 & as.integer(diag_1) <= 519) | as.integer(diag_1) == 786, "Respiratory", 
+ ifelse((as.integer(diag_1) >= 520 & as.integer(diag_1) <= 579) | as.integer(diag_1) == 787, "Digestive", 
+ ifelse((as.integer(diag_1) >= 580 & as.integer(diag_1) <= 629) | as.integer(diag_1) == 788, "Genitourinary",
+ ifelse((as.integer(diag_1) >= 140 & as.integer(diag_1) <= 239), "Neoplasms",  
+ ifelse((as.integer(diag_1) >= 710 & as.integer(diag_1) <= 739), "Musculoskeletal",          
+ ifelse((as.integer(diag_1) >= 800 & as.integer(diag_1) <= 999), "Injury","Other"))))))))))
+
+data5$diag_1 <- as.factor(data5$diag_1)
+
+
+par(mfrow=c(1, 2))
+barplot(table(data4$diag_1), main="Antes")
+barplot(table(data5$diagnostic), main="Después")
+
+data5 <- subset(data5, select = -c(diag_1))
+
+
+```
+
+
+###Age: Grouped in 10-year intervals: [0, 10), [10, 20), . . ., [90, 100)
+Se puede apreciar que los rangos etarios avanzan de 10 en 10. Se podría categorizar las edades de 0 a 10 y 10 a 20 en una categoría al igual que de
+80 a 90 y 90 a 100 en otra y el resto de categorías tendrían un rango de 20 años también.
+Se aprecia también que la distribución tiene una asimetría negativa.
+```{r echo=FALSE}
+data5$age <- data4$age
+data5$age <- 
+  ifelse(data5$age == "[0-10)","[0-20)",
+  ifelse(data5$age=="[10-20)","[0-20)",
+  ifelse(data5$age=="[20-30)","[20-40)",
+  ifelse(data5$age=="[30-40)","[20-40)",
+  ifelse(data5$age=="[40-50)","[40-60)",
+  ifelse(data5$age=="[50-60)","[40-60)",
+  ifelse(data5$age=="[60-70)","[60-80)",
+  ifelse(data5$age=="[70-80)","[60-80)",
+  ifelse(data5$age=="[80-90)","[80-100)",
+  ifelse(data5$age=="[90-100)","[80-100)", data5$age))))))))))
+
+data5$age <- as.factor(data5$age)
+
+par(mfrow=c(1, 2))
+barplot(table(data4$age), main="Antes")
+barplot(table(data5$age), main="Después")
+```
+
+
+### Variables adicionales que requerirían ser retiradas del análisis
+Se aprecia cierta duplicidad en cuanto a la medicación prescrita. 
+Por ejemplo, se tiene las variables glyburide y metformin por separado pero a la vez se tiene la variable glyburide.metformin que hace referencia
+a la prescripción de ambos fármacos en simultáneo.
+
+En consecuencia, se tomó la decisión de eliminar del análisis a glyburide.metformin, glipizide.metformin, glimepiride.pioglitazone,
+metformin.rosiglitazone y metformin.pioglitazone
+
+```{r}
+data5 <- subset(data5, select = -c(glyburide.metformin, 
+                                   glipizide.metformin, 
+                                   glimepiride.pioglitazone, 
+                                   metformin.rosiglitazone, 
+                                   metformin.pioglitazone))
+```
+
+
+###Registros duplicados que deben ser removidos
+Se aprecia la presencia de duplicidad en los registros para un mismo patient_nbr en un porcentaje aproximado de 30%.
+Para poder remover los registros duplicados se utiliza !duplicated().
+```{r}
+data5 <- data5[!duplicated(data5$patient_nbr),]
+
+```
+
+### Variable TARGET readmitted: 30 days, “>30” if the patient was readmitted in more than 30 days, and “No” for no record of readmission.
+El análisis se centra en la readmisión anticipada (<30 días), se puede categorizar en:<br>
+  1: readmitido dentro de los 30 días posiblemente porque el tratamiento no fue el apropiado.<br>
+  0: cualquier otro caso<br>
+```{r}
+data5$readmitted <- case_when(data5$readmitted %in% c(">30","NO") ~ "0", TRUE ~ "1")
+data5$readmitted <- as.factor(data5$readmitted) 
+str(data5)
+```
+        
+
+
+##Tratamiento de las variables numéricas (Outlier, Correlación, etc)
+Revisión general<br>
+```{r echo=FALSE}
+
+boxplot(data5$time_in_hospital, main = "time_in_hospital")
+boxplot(data5$num_lab_procedures, main = "num_lab_procedures")
+boxplot(data5$num_procedures, main = "num_procedures")
+boxplot(data5$num_medications, main = "num_medications")
+boxplot(data5$number_outpatient, main = "number_outpatient")
+boxplot(data5$number_emergency, main = "number_emergency")
+boxplot(data5$number_inpatient, main = "number_inpatient")
+boxplot(data5$number_diagnoses, main = "number_diagnoses")
+
+```
+
+Se aprecia presencia de outliers en todas las variables numéricas analizadas
+###Aplicando Capping
+#### time_in_hospital
+```{r}
+data6 <- data5
+x <- data6$time_in_hospital
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$time_in_hospital <- x
+```
+
+
+```{r echo=FALSE}
+
+par(mfrow=c(1, 2))
+boxplot(data5$time_in_hospital, main="Antes")
+boxplot(data6$time_in_hospital, main="Despues")
+mtext("Time in Hospital", outer = TRUE, side = 3, line = -1)
+
+```
+
+
+
+#### num_lab_procedures
+
+```{r echo=FALSE}
+x <- data6$num_lab_procedures
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$num_lab_procedures <- x
+
+par(mfrow=c(1, 2))
+boxplot(data5$num_lab_procedures, main="Antes")
+boxplot(data6$num_lab_procedures, main="Despues")
+mtext("Number of laboratory procedures", outer = TRUE, side = 3, line = -1)
+```
+
+
+#### num_procedures
+```{r echo=FALSE}
+data6$num_procedures <- data5$num_procedures
+x <- data6$num_procedures
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$num_procedures <- x
+
+par(mfrow=c(1, 2))
+boxplot(data5$num_procedures, main="Antes")
+boxplot(data6$num_procedures, main="Despues")
+mtext("Number of procedures", outer = TRUE, side = 3, line = -1)
+```
+
+
+
+
+#### num_medications
+```{r echo=FALSE}
+x <- data6$num_medications
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$num_medications <- x
+par(mfrow=c(1, 2))
+boxplot(data5$num_medications, main="Antes")
+boxplot(data6$num_medications, main="Despues")
+mtext("Number of medication", outer = TRUE, side = 3, line = -1)
+```
+
+
+
+
+#### number_outpatient
+```{r echo=FALSE}
+x <- data6$number_outpatient
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_outpatient <- x
+par(mfrow=c(1, 2))
+boxplot(data5$number_outpatient, main="Antes")
+boxplot(data6$number_outpatient, main="Despues")
+mtext("Number of outpatients", outer = TRUE, side = 3, line = -1)
+```
+
+
+En el caso de Number of outpatients vemos que no hay mucho aporte de valor debido a la cantidad de outliers que permanecen después de aplicar capping. Se procede a optar por la eliminación de estos
+```{r}
+data6 <- subset(data6, select = -c(number_outpatient))
+
+```
+
+#### number_emergency
+```{r echo=FALSE}
+x <- data6$number_emergency
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_emergency <- x
+par(mfrow=c(1, 2))
+boxplot(data5$number_emergency, main="Antes")
+boxplot(data6$number_emergency, main="Despues")
+mtext("Number of emergency", outer = TRUE, side = 3, line = -1)
+```
+
+
+Al igual que en el caso de Number of outpatients, en Number of Emergency vemos que no hay mucho aporte de valor debido a la cantidad de outliers que permanecen después de aplicar capping. 
+Se procede a optar por la eliminación de esta variable
+```{r}
+data6 <- subset(data6, select = -c(number_emergency))
+
+```
+
+
+#### number_inpatient
+```{r echo=FALSE}
+x <- data6$number_inpatient
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_inpatient <- x
+par(mfrow=c(1, 2))
+boxplot(data5$number_inpatient, main="Antes")
+boxplot(data6$number_inpatient, main="Despues")
+mtext("Number of inpatient", outer = TRUE, side = 3, line = -1)
+```
+
+
+Al igual que en los dos casos previos, en Number of Inpatient vemos que no hay mucho aporte de valor debido a la cantidad de outliers que permanecen después de aplicar capping. 
+Se procede a optar por la eliminación de esta variable
+```{r}
+data6 <- subset(data6, select = -c(number_inpatient))
+
+```
+
+#### number_diagnoses
+```{r echo=FALSE}
+x <- data6$number_diagnoses
+qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(x, na.rm = T)
+x[x < (qnt[1] - H)] <- caps[1]
+x[x > (qnt[2] + H)] <- caps[2]
+data6$number_diagnoses <- x
+par(mfrow=c(1, 2))
+boxplot(data5$number_diagnoses, main="Antes")
+boxplot(data6$number_diagnoses, main="Despues")
+mtext("Number of diagnoses", outer = TRUE, side = 3, line = -1)
+```
+
+
+
+### Análisis de correlación entre variables numéricas
+```{r}
+cuantis <- data6 %>% select(time_in_hospital,
+                            num_lab_procedures,
+                            num_procedures,
+                            num_medications,
+                            number_diagnoses)
+
+cualis <- data6%>% select(-patient_nbr,
+                          -time_in_hospital,
+                          -num_lab_procedures,
+                          -num_procedures,
+                          -num_medications,
+                          -number_diagnoses)
+
+res <- cor(cuantis)
+round(res, 2)
+data7 <- cbind(cualis,cuantis)
+```
+
+
+Si bien se aprecia cierta correlación entre time_in_hospital y num_medications, esta no llega a superar el 0.6 por lo que se determina que no hay suficiente correlación entre las variables.
+
+###Selección de variables utilizando Boruta (se basa en random forest, escoge variables con target dicotómica)
+```{r}
+#boruta <- Boruta(readmitted ~., data = data7, doTrace = 0)
+#plot(boruta, las = 2, cex.axis = 1)
+
+#attStats(boruta)
+#boruta
+```
+
+Después de utilizar Boruta para la selección de variables se obtiene lo siguiente:<br>
+18 attributes confirmed important: A1Cresult, admission_source_id, admission_type_id, age,
+change and 13 more;
+14 attributes confirmed unimportant: acarbose, acetohexamide, chlorpropamide, glimepiride,
+glipizide and 9 more;
+
+De este modo, se procederá a retirar las variables que fueron consideradas irrelevantes del dataset final
+```{r}
+dataset <-subset(data7, select = -c(acarbose, 
+                                    acetohexamide, 
+                                    chlorpropamide, 
+                                    glimepiride, 
+                                    glipizide,
+                                    nateglinide,
+                                    glyburide,
+                                    tolbutamide,
+                                    miglitol,
+                                    rosiglitazone,
+                                    pioglitazone,
+                                    tolazamide,
+                                    repaglinide,
+                                    troglitazone))
+```
+
+```{r}
+str(dataset)
+```
+
+
+## IMPLEMENTACIÓN DE LOS MODELOS
+
+Se decidió implementar 3 modelos: Modelo logístico, Decision Tree y Random Forest<br>
+- Se hará un rebalanceo de los datos<br>
+- El data set de entrenamiento tendrá el 70% de los datos<br>
+- El data set de  testing tendrá el 30% de los datos<br>
+
+###Seleccion de datos de entrenamiento y de testing
+```{r}
+dataset$diagnostic <- as.factor(dataset$diagnostic)
+train <- createDataPartition(dataset$readmitted, p = 0.7, list = FALSE)
+data_train <- dataset[train, ]
+data_test <- dataset[-train, ]
+str(data_train)
+```
+
+### Balanceo de datos
+Se utiliza Random Oversampling Samples para generar datos de forma sintética
+```{r}
+data_rose <- ROSE(readmitted ~., data = data_train)$data
+table(data_rose$readmitted)
+
+```
+
+
+
+
+##Implementando el modelo logistico
+```{r}
+model <- glm(readmitted ~.,family=binomial(link='logit'),data=data_rose)
+logit_pred <- predict(model, newdata = data_test, interval = "confidence")
+
+```
+
+
+### Indicadores
+Calcular el AUC
+```{r}
+AUC1 <- MLmetrics::AUC(logit_pred,data_test$readmitted)
+
+```
+
+Calcular el GINI
+```{r}
+gini1 <- 2*(AUC1) -1
+
+```
+
+
+
+### Calcular los valores predichos
+
+```{r}
+table(data_test$readmitted)
+
+PRED <- ifelse(logit_pred<=0.5,0,1) # pto de corte 0.5
+PRED <- as.factor(PRED)
+```
+
+
+
+### Calcular la matriz de confusion
+```{r}
+tabla1 <- caret::confusionMatrix(PRED,data_test$readmitted,positive = "1")
+tabla1
+```
+
+
+
+```{r}
+#Sensibilidad
+Sensitivity1 <- MLmetrics::Sensitivity(PRED,data_test$readmitted)
+
+#Specificity
+Specificity1 <- MLmetrics::Specificity(PRED,data_test$readmitted)
+
+#Precision
+Accuracy1 <- MLmetrics::Accuracy(PRED,data_test$readmitted)
+
+#Calcular el error de mala clasificación
+error1 <- 1-Accuracy1
+
+
+AUC1
+gini1
+Accuracy1
+error1
+Sensitivity1
+Specificity1
+```
+
+
+## Implementando el modelo Decision Tree
+```{r}
+library(rpart)
+DTModel <- train(readmitted ~ ., data = data_rose, method = "rpart")
+#DTModel <- rpart(readmitted ~ ., data = data_rose)
+DT_pred <- predict(DTModel, newdata = data_test)
+
+```
+
+# Indicadores ####
+Calculando el AUC
+```{r}
+AUC2 <- MLmetrics::AUC(DT_pred,data_test$readmitted)
+
+```
+
+calcular el GINI
+```{r}
+gini2 <- 2*(AUC2) -1
+
+```
+
+
+
+
+### Calcular los valores predichos
+
+```{r}
+table(data_test$readmitted)
+
+PRED2 <- ifelse(as.numeric(as.character(DT_pred))<=0.5,0,1) # pto de corte 0.5
+PRED2 <- as.factor(PRED2)
+table(PRED2)
+```
+
+
+### Calcular la matriz de confusion
+```{r}
+tabla2 <- caret::confusionMatrix(PRED2,data_test$readmitted,positive = "1")
+tabla2
+```
+
+
+```{r}
+# Sensibilidad
+Sensitivity2 <- MLmetrics::Sensitivity(PRED2,data_test$readmitted)
+
+# Specificity
+Specificity2 <- MLmetrics::Specificity(PRED2,data_test$readmitted)
+
+# Precision
+Accuracy2 <- MLmetrics::Accuracy(PRED2,data_test$readmitted)
+
+# Calcular el error de mala clasificación
+error2 <- 1-Accuracy2
+
+# indicadores
+AUC2
+gini2
+Accuracy2
+error2
+Sensitivity2
+Specificity2
+```
+
+
+
+
+### Implementando el modelo Random Forest
+OJO: Se tuvo que detener el entrenamiento después de alrededor de 4 horas debido a que no terminaba
+
+```{r}
+#RFModel <- train(readmitted ~ ., data = data_rose, method = "rf")
+
+#RF_pred <- predict(RFModel, newdata = data_test, interval = "confidence")
+```
+
+
+# Indicadores
+Calculando el AUC
+```{r}
+#AUC3 <- MLmetrics::AUC(RF_pred,data_test$readmitted)
+
+```
+
+calcular el GINI
+```{r}
+#gini3 <- 2*(AUC2) -1
+
+```
+
+
+Calcular el KS
+```{r}
+#KS3 <- MLmetrics::KS_Stat(RF_pred,data_test$readmitted)
+
+```
+
+
+### Calcular los valores predichos
+
+```{r}
+#PRED <- ifelse(RF_pred<=0.5,0,1) # pto de corte 0.5
+#PRED <- as.factor(PRED)
+```
+
+
+
+### Calcular la matriz de confusion
+```{r}
+#tabla3 <- caret::confusionMatrix(PRED,data_test$readmitted,positive = "1")
+#tabla3
+```
+
+```{r}
+
+
+# Sensibilidad
+#Sensitivity3 <- MLmetrics::Sensitivity(PRED,data_test$readmitted)
+
+# Specificity
+#Specificity3 <- MLmetrics::Specificity(PRED,data_test$readmitted)
+
+# Precision
+#Accuracy3 <- MLmetrics::Accuracy(PRED,data_test$readmitted)
+
+# Calcular el error de mala clasificación
+#error3 <- 1-Accuracy3
+
+#indicadores
+#AUC3
+#gini3
+#LogLoss3
+#KS3
+#Accuracy3
+#error3
+#Sensitivity3
+#Specificity3
+```
+
+
+### Resultados finales
+```{r}
+AUC <- rbind(AUC1,AUC2); AUC <- round(AUC,3)
+Accuracy <- rbind(Accuracy1,Accuracy2); Accuracy <- round(Accuracy,3)
+Sensitivity <- rbind(Sensitivity1,Sensitivity2); Sensitivity <- round(Sensitivity,3)
+Indicadores <- cbind(AUC,Accuracy,Sensitivity)
+rownames(Indicadores)<- c('modelo_logit','modelo_DecisionTree')
+colnames(Indicadores)<- c('AUC','Accuracy','Sensitivity')
+
+Indicadores
+```
+
+
+## Conclusiones
+En base al análisis realizado con un modelo logistico y el modelo decision tree, se concluye que el modelo logistico es el mejor modelo para clasificar la variable readmission.
+
